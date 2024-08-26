@@ -57,25 +57,28 @@ func (g *Game) Update() error {
 
 func (g *Game) Draw(screen *ebiten.Image) {
 	opts := &ebiten.DrawImageOptions{}
-	for i := 0; i < g.Size; i++ {
-		for j := 0; j < g.Size; j++ {
-			opts.GeoM.Reset()
-			opts.GeoM.Translate(float64(j*(cellSize+cellBorder)), float64(i*(cellSize+cellBorder)))
-			g.cellImage.Fill(g.Boards[0].Rows[i][j].Color)
-			screen.DrawImage(g.cellImage, opts)
+	for b := 0; b < 2; b++ {
+		for i := 0; i < g.Size; i++ {
+			for j := 0; j < g.Size; j++ {
+				opts.GeoM.Reset()
+				opts.GeoM.Translate(float64((b*(g.Size+1)+j)*(cellSize+cellBorder)), float64(cellSize+i*(cellSize+cellBorder)))
+				g.cellImage.Fill(g.Boards[b].Rows[i][j].Color)
+				screen.DrawImage(g.cellImage, opts)
+			}
 		}
 	}
 }
 
 func (g *Game) Layout(oW, oH int) (int, int) {
 	size := g.Size*(cellSize+cellBorder) + cellBorder
-	return size*2 + cellSize, size
+	return size*2 + cellSize, size+2*cellSize
 }
 
 func main() {
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 	ebiten.SetWindowSize(640, 480)
 	ebiten.SetWindowTitle("sea battle")
+	ebiten.SetTPS(1)
 	cells := 8
 	if err := ebiten.RunGame(NewGame(cells)); err != nil {
 		log.Fatal(err)
