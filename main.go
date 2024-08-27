@@ -6,10 +6,14 @@ import (
 	"image/color"
 	"log"
 
+	"github.com/bukind/seabattle2/fonts"
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/text/v2"
-	"github.com/bukind/seabattle2/fonts"
 )
+
+// bbbbbbbbbbbbbbbbbb
+// bcccccccccbccc
+// bcccccccccbccc
 
 const (
 	cellSize   = 32
@@ -45,15 +49,15 @@ func NewBoard(size int) *Board {
 }
 
 type Game struct {
-	Size      int
+	Ncells    int
 	Boards    [2]*Board
 	cellImage *ebiten.Image
 }
 
-func NewGame(size int) *Game {
+func NewGame(nCells int) *Game {
 	g := &Game{
-		Size:      size,
-		Boards:    [2]*Board{NewBoard(size), NewBoard(size)},
+		Ncells:    nCells,
+		Boards:    [2]*Board{NewBoard(nCells), NewBoard(nCells)},
 		cellImage: ebiten.NewImage(cellSize, cellSize),
 	}
 	return g
@@ -63,36 +67,47 @@ func (g *Game) Update() error {
 	return nil
 }
 
+func cellPos(row int) int {
+	return cellBorder + (cellSize+cellBorder)*row
+}
+
+// moveXY translates GeoM into the cell (X,Y) coordinate of the cell on the board.
+func (g *Game) moveXY(m *ebiten.GeoM, col, row, board int) {
+	m.Translate(float64(cellPos(board*(g.Ncells+1)+col)), float64(cellPos(row+1)))
+}
+
 func (g *Game) Draw(screen *ebiten.Image) {
 	opts := &ebiten.DrawImageOptions{}
-	topts := &text.DrawOptions{}
-	for i := 0; i < g.Size; i++ {
+	topts := func(x, y, b int) *text.DrawOptions {
+		topts := &text.DrawOptions{}
+		topts.PrimaryAlign = text.AlignCenter
+		topts.SecondaryAlign = text.AlignCenter
+		topts.GeoM.Translate(cellSize*0.5, cellSize*0.5)
+		g.moveXY(&topts.GeoM, x, y, b)
+		return topts
+	}
+	for y := 0; y < g.Ncells; y++ {
 		for b := 0; b < 2; b++ {
-			for j := 0; j < g.Size; j++ {
+			for x := 0; x < g.Ncells; x++ {
 				opts.GeoM.Reset()
-				opts.GeoM.Translate(float64((b*(g.Size+1)+j)*(cellSize+cellBorder)), float64(cellSize+i*(cellSize+cellBorder)))
-				g.cellImage.Fill(g.Boards[b].Rows[i][j].Color)
+				g.moveXY(&opts.GeoM, x, y, b)
+				g.cellImage.Fill(g.Boards[b].Rows[y][x].Color)
 				screen.DrawImage(g.cellImage, opts)
 			}
-			topts.GeoM.Reset()
-			topts.GeoM.Translate(float64((b*(g.Size+1)+i)*(cellSize+cellBorder)), float64(cellSize+g.Size*(cellSize+cellBorder)))
-			text.Draw(screen, fmt.Sprintf("%c", 'A'+i), &text.GoTextFace{
+			text.Draw(screen, fmt.Sprintf("%c", 'A'+y), &text.GoTextFace{
 				Source: ptSansFontSource,
-				Size: cellSize,
-			}, topts)
+				Size:   cellSize * 0.8,
+			}, topts(y, g.Ncells, b))
 		}
-		topts.GeoM.Reset()
-		topts.GeoM.Translate(float64((g.Size)*(cellSize+cellBorder)), float64((g.Size-i)*(cellSize+cellBorder)))
-		text.Draw(screen, fmt.Sprintf("%c", '1'+i), &text.GoTextFace{
+		text.Draw(screen, fmt.Sprintf("%c", '1'+y), &text.GoTextFace{
 			Source: ptSansFontSource,
-			Size: cellSize,
-		}, topts)
+			Size:   cellSize * 0.8,
+		}, topts(g.Ncells, g.Ncells-y-1, 0))
 	}
 }
 
 func (g *Game) Layout(oW, oH int) (int, int) {
-	size := g.Size*(cellSize+cellBorder) + cellBorder
-	return size*2 + cellSize, size+2*cellSize
+	return cellPos(g.Ncells*2 + 1), cellPos(g.Ncells + 2)
 }
 
 func loadFonts() {
@@ -109,8 +124,8 @@ func main() {
 	ebiten.SetWindowSize(640, 480)
 	ebiten.SetWindowTitle("sea battle")
 	ebiten.SetTPS(1)
-	cells := 8
-	if err := ebiten.RunGame(NewGame(cells)); err != nil {
+	nCells := 8
+	if err := ebiten.RunGame(NewGame(nCells)); err != nil {
 		log.Fatal(err)
 	}
 }
