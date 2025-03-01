@@ -3,28 +3,101 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"image"
 	"image/color"
 	"log"
+	"math"
+	"math/rand"
 
 	"github.com/bukind/seabattle2/fonts"
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/text/v2"
+	"github.com/hajimehoshi/ebiten/v2/vector"
 )
 
 // bbbbbbbbbbbbbbbbbb
 // bcccccccccbccc
 // bcccccccccbccc
 
+type Cell int
+
+type CellParams struct {
+	SceneColor   color.RGBA
+	CircleColor  color.RGBA
+	CircleRadius float32
+}
+
 const (
 	cellSize   = 32
+	cellSizeF  = float32(cellSize)
 	cellBorder = 1
+
+	CellEmpty Cell = iota
+	CellHide
+	CellMiss
+	CellShip
+	CellFire
+	CellDead
+	CellCursor
 )
 
 var (
 	ptSansFontSource *text.GoTextFaceSource
+
+	colorEmpty = color.RGBA{}
+	colorMist  = color.RGBA{0xbb, 0xbb, 0xbb, 0xff}
+	colorSea   = color.RGBA{0x00, 0x22, 0xff, 0xff}
+	colorShip  = color.RGBA{0x22, 0x22, 0x22, 0xff}
+
+	cellParams = map[Cell]CellParams{
+		CellEmpty: {colorSea, colorEmpty, 0.},
+		CellHide:  {colorMist, colorEmpty, 0.},
+		CellMiss:  {colorSea, colorMist, 0.25},
+		CellShip:  {colorShip, colorEmpty, 0.},
+		CellFire:  {color.RGBA{0x88, 0x22, 0x22, 0xff}, color.RGBA{0xff, 0x88, 0x22, 0x88}, 0.45},
+		CellDead:  {colorSea, colorShip, 0.55},
+	}
+
+	fillImage = func() *ebiten.Image {
+		img := ebiten.NewImageWithOptions(image.Rect(-1, -1, 1, 1), nil)
+		img.Fill(color.RGBA{0xff, 0xff, 0xff, 0xff})
+		return img
+	}()
 )
 
-type Cell color.Color
+func (c Cell) String() string {
+	switch c {
+	case CellEmpty:
+		return "empty"
+	case CellHide:
+		return "hide"
+	case CellMiss:
+		return "miss"
+	case CellShip:
+		return "ship"
+	case CellFire:
+		return "fire"
+	case CellDead:
+		return "dead"
+	case CellCursor:
+		return "cursor"
+	}
+	return "unknown"
+}
+
+func colorS(c color.RGBA) string {
+	if c == colorEmpty {
+		return "#none"
+	}
+	return fmt.Sprintf("#%x%x%x%x", c.R, c.G, c.B, c.A)
+}
+
+func setVtxColor(v *ebiten.Vertex, c color.RGBA) {
+	v.ColorR = float32(c.R) / 0xff
+	v.ColorG = float32(c.G) / 0xff
+	v.ColorB = float32(c.B) / 0xff
+	v.ColorA = float32(c.A) / 0xff
+}
 
 type Row []Cell
 
@@ -40,7 +113,7 @@ func NewBoard(g *Game, side, size int) *Board {
 		r := make(Row, size)
 		rows[i] = r
 		for j := 0; j < size; j++ {
-			r[j] = color.RGBA{uint8(0xff * j / (size - 1)), uint8(0xff * i / (size - 1)), 0x78, 0xff}
+			r[j] = Cell(rand.Intn(int(CellCursor)))
 		}
 	}
 	return &Board{
@@ -58,7 +131,7 @@ func (b *Board) draw(screen *ebiten.Image) {
 		for y := 0; y < g.Ncells; y++ {
 			opts.GeoM.Reset()
 			g.moveXY(&opts.GeoM, x, y, b.Side)
-			g.cellImage.Fill(b.Rows[y][x])
+			b.drawCellInto(x, y, g.cellImage)
 			screen.DrawImage(g.cellImage, opts)
 		}
 		text.Draw(screen, fmt.Sprintf("%c", 'A'+x), &text.GoTextFace{
@@ -68,7 +141,35 @@ func (b *Board) draw(screen *ebiten.Image) {
 	}
 }
 
+func (b *Board) drawCellInto(x, y int, into *ebiten.Image) {
+	c := b.Rows[y][x]
+	params := cellParams[c]
+	if b.Game.Turn < 2 {
+		log.Printf("cell[%c,%c]@%d: %s => %s %s", 'A'+x, '1'+y, b.Side, c, colorS(params.SceneColor), colorS(params.CircleColor))
+	}
+	if params.SceneColor != colorEmpty {
+		into.Fill(params.SceneColor)
+	}
+	if params.CircleColor != colorEmpty {
+		// Draw a circle in the middle of the cell.
+		var path vector.Path
+		path.Arc(cellSizeF/2, cellSizeF/2, cellSize*params.CircleRadius, 0, math.Pi*2, vector.Clockwise)
+		path.Close()
+		// TODO: reuse slice of vertices and indices.
+		vtx, idx := path.AppendVerticesAndIndicesForFilling(nil, nil)
+		for i := range vtx {
+			setVtxColor(&vtx[i], params.CircleColor)
+		}
+		op := &ebiten.DrawTrianglesOptions{
+			AntiAlias: true,
+			FillRule:  ebiten.FillRuleNonZero,
+		}
+		into.DrawTriangles(vtx, idx, fillImage, op)
+	}
+}
+
 type Game struct {
+	Turn      int
 	Ncells    int
 	Boards    [2]*Board
 	cellImage *ebiten.Image
@@ -84,6 +185,7 @@ func NewGame(nCells int) *Game {
 }
 
 func (g *Game) Update() error {
+	g.Turn++
 	return nil
 }
 
@@ -114,7 +216,7 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		text.Draw(screen, fmt.Sprintf("%c", '1'+y), &text.GoTextFace{
 			Source: ptSansFontSource,
 			Size:   cellSize * 0.8,
-		}, g.textInXY(g.Ncells, g.Ncells-y-1, 0))
+		}, g.textInXY(g.Ncells, y, 0))
 	}
 }
 
