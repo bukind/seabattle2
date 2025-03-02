@@ -122,15 +122,14 @@ func NewBoard(g *Game, side, size int) *Board {
 }
 
 func (b *Board) draw(screen *ebiten.Image) {
-	opts := &ebiten.DrawImageOptions{}
 	g := b.Game
 	// Draw cells
 	for x := 0; x < g.Ncells; x++ {
 		for y := 0; y < g.Ncells; y++ {
-			opts.GeoM.Reset()
-			g.moveXY(&opts.GeoM, x, y, b.Side)
+			g.opts.GeoM.Reset()
+			g.moveXY(&g.opts.GeoM, x, y, b.Side)
 			b.drawCellInto(x, y, g.cellImage)
-			screen.DrawImage(g.cellImage, opts)
+			screen.DrawImage(g.cellImage, &g.opts)
 		}
 		text.Draw(screen, fmt.Sprintf("%c", 'A'+x), &text.GoTextFace{
 			Source: ptSansFontSource,
@@ -140,6 +139,7 @@ func (b *Board) draw(screen *ebiten.Image) {
 }
 
 func (b *Board) drawCellInto(x, y int, into *ebiten.Image) {
+	g := b.Game
 	c := b.Rows[y][x]
 	params := cellParams[c]
 	if b.Game.Tick < 2 {
@@ -153,16 +153,15 @@ func (b *Board) drawCellInto(x, y int, into *ebiten.Image) {
 		var path vector.Path
 		path.Arc(cellSizeF/2, cellSizeF/2, cellSize*params.CircleRadius, 0, math.Pi*2, vector.Clockwise)
 		path.Close()
-		// TODO: reuse slice of vertices and indices.
-		vtx, idx := path.AppendVerticesAndIndicesForFilling(nil, nil)
-		for i := range vtx {
-			setVtxColor(&vtx[i], params.CircleColor)
+		g.vtx, g.idx = path.AppendVerticesAndIndicesForFilling(g.vtx[:0], g.idx[:0])
+		for i := range g.vtx {
+			setVtxColor(&g.vtx[i], params.CircleColor)
 		}
 		op := &ebiten.DrawTrianglesOptions{
 			AntiAlias: true,
 			FillRule:  ebiten.FillRuleNonZero,
 		}
-		into.DrawTriangles(vtx, idx, fillImage, op)
+		into.DrawTriangles(g.vtx, g.idx, fillImage, op)
 	}
 }
 
@@ -177,31 +176,34 @@ func (g *Game) drawCursor(screen *ebiten.Image) {
 	path.LineTo(hw+dw, hw+dw)
 	path.LineTo(hw-dw, hw+dw)
 	path.Close()
-	// TODO: use cache
-	vtx, idx := path.AppendVerticesAndIndicesForStroke(nil, nil, &vector.StrokeOptions{
+	g.vtx, g.idx = path.AppendVerticesAndIndicesForStroke(g.vtx[:0], g.idx[:0], &vector.StrokeOptions{
 		Width:    cellSize / 8,
 		LineJoin: vector.LineJoinRound,
 	})
-	for i := range vtx {
-		setVtxColor(&vtx[i], col)
+	for i := range g.vtx {
+		setVtxColor(&g.vtx[i], col)
 	}
-	g.cellImage.DrawTriangles(vtx, idx, fillImage, &ebiten.DrawTrianglesOptions{
+	g.cellImage.DrawTriangles(g.vtx, g.idx, fillImage, &ebiten.DrawTrianglesOptions{
 		AntiAlias: true,
 		FillRule:  ebiten.FillRuleNonZero,
 	})
-	// TODO: use cache.
-	opts := &ebiten.DrawImageOptions{}
-	g.moveXY(&opts.GeoM, g.CursorX, g.CursorY, 1)
-	screen.DrawImage(g.cellImage, opts)
+	g.opts.GeoM.Reset()
+	g.moveXY(&g.opts.GeoM, g.CursorX, g.CursorY, 1)
+	screen.DrawImage(g.cellImage, &g.opts)
 }
 
 type Game struct {
-	Tick      int
-	Ncells    int
-	Boards    [2]*Board
-	CursorX   int
-	CursorY   int
+	Tick    int
+	Ncells  int
+	Boards  [2]*Board
+	CursorX int
+	CursorY int
+
+	// cache objects.
 	cellImage *ebiten.Image
+	vtx       []ebiten.Vertex
+	idx       []uint16
+	opts      ebiten.DrawImageOptions
 }
 
 func NewGame(nCells int) *Game {
