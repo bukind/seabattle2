@@ -31,6 +31,7 @@ const (
 	cellSize   = 32
 	cellSizeF  = float32(cellSize)
 	cellBorder = 1
+	gameTPS    = 1
 
 	CellEmpty Cell = iota
 	CellHide
@@ -38,7 +39,6 @@ const (
 	CellShip
 	CellFire
 	CellDead
-	CellCursor
 )
 
 var (
@@ -79,8 +79,6 @@ func (c Cell) String() string {
 		return "fire"
 	case CellDead:
 		return "dead"
-	case CellCursor:
-		return "cursor"
 	}
 	return "unknown"
 }
@@ -113,7 +111,7 @@ func NewBoard(g *Game, side, size int) *Board {
 		r := make(Row, size)
 		rows[i] = r
 		for j := 0; j < size; j++ {
-			r[j] = Cell(rand.Intn(int(CellCursor)))
+			r[j] = Cell(rand.Intn(int(CellDead + 1)))
 		}
 	}
 	return &Board{
@@ -144,7 +142,7 @@ func (b *Board) draw(screen *ebiten.Image) {
 func (b *Board) drawCellInto(x, y int, into *ebiten.Image) {
 	c := b.Rows[y][x]
 	params := cellParams[c]
-	if b.Game.Turn < 2 {
+	if b.Game.Tick < 2 {
 		log.Printf("cell[%c,%c]@%d: %s => %s %s", 'A'+x, '1'+y, b.Side, c, colorS(params.SceneColor), colorS(params.CircleColor))
 	}
 	if params.SceneColor != colorEmpty {
@@ -168,10 +166,41 @@ func (b *Board) drawCellInto(x, y int, into *ebiten.Image) {
 	}
 }
 
+func (g *Game) drawCursor(screen *ebiten.Image) {
+	col := color.RGBA{0, 0xff, 0, uint8(0xff * (g.Tick % (gameTPS + 1)) / gameTPS)}
+
+	var path vector.Path
+	hw := cellSizeF / 2
+	dw := cellSizeF * 0.45
+	path.MoveTo(hw-dw, hw-dw)
+	path.LineTo(hw+dw, hw-dw)
+	path.LineTo(hw+dw, hw+dw)
+	path.LineTo(hw-dw, hw+dw)
+	path.Close()
+	// TODO: use cache
+	vtx, idx := path.AppendVerticesAndIndicesForStroke(nil, nil, &vector.StrokeOptions{
+		Width:    cellSize / 8,
+		LineJoin: vector.LineJoinRound,
+	})
+	for i := range vtx {
+		setVtxColor(&vtx[i], col)
+	}
+	g.cellImage.DrawTriangles(vtx, idx, fillImage, &ebiten.DrawTrianglesOptions{
+		AntiAlias: true,
+		FillRule:  ebiten.FillRuleNonZero,
+	})
+	// TODO: use cache.
+	opts := &ebiten.DrawImageOptions{}
+	g.moveXY(&opts.GeoM, g.CursorX, g.CursorY, 1)
+	screen.DrawImage(g.cellImage, opts)
+}
+
 type Game struct {
-	Turn      int
+	Tick      int
 	Ncells    int
 	Boards    [2]*Board
+	CursorX   int
+	CursorY   int
 	cellImage *ebiten.Image
 }
 
@@ -185,7 +214,8 @@ func NewGame(nCells int) *Game {
 }
 
 func (g *Game) Update() error {
-	g.Turn++
+	g.Tick++
+	log.Printf("update tick=%d", g.Tick)
 	return nil
 }
 
@@ -218,6 +248,7 @@ func (g *Game) Draw(screen *ebiten.Image) {
 			Size:   cellSize * 0.8,
 		}, g.textInXY(g.Ncells, y, 0))
 	}
+	g.drawCursor(screen)
 }
 
 func (g *Game) Layout(oW, oH int) (int, int) {
@@ -237,7 +268,7 @@ func main() {
 	loadFonts()
 	ebiten.SetWindowSize(640, 480)
 	ebiten.SetWindowTitle("sea battle")
-	ebiten.SetTPS(1)
+	ebiten.SetTPS(gameTPS)
 	nCells := 8
 	if err := ebiten.RunGame(NewGame(nCells)); err != nil {
 		log.Fatal(err)
