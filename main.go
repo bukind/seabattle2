@@ -11,6 +11,7 @@ import (
 
 	"github.com/bukind/seabattle2/fonts"
 	"github.com/hajimehoshi/ebiten/v2"
+	"github.com/hajimehoshi/ebiten/v2/inpututil"
 	"github.com/hajimehoshi/ebiten/v2/text/v2"
 	"github.com/hajimehoshi/ebiten/v2/vector"
 )
@@ -31,7 +32,7 @@ const (
 	cellSize   = 32
 	cellSizeF  = float32(cellSize)
 	cellBorder = 1
-	gameTPS    = 1
+	gameTPS    = 10
 
 	CellEmpty Cell = iota
 	CellHide
@@ -142,11 +143,10 @@ func (b *Board) drawCellInto(x, y int, into *ebiten.Image) {
 	g := b.Game
 	c := b.Rows[y][x]
 	params := cellParams[c]
-	if b.Game.Tick < 2 {
-		log.Printf("cell[%c,%c]@%d: %s => %s %s", 'A'+x, '1'+y, b.Side, c, colorS(params.SceneColor), colorS(params.CircleColor))
-	}
 	if params.SceneColor != colorEmpty {
 		into.Fill(params.SceneColor)
+	} else {
+		into.Fill(color.RGBA{0, 0, 0, 0})
 	}
 	if params.CircleColor != colorEmpty {
 		// Draw a circle in the middle of the cell.
@@ -183,6 +183,7 @@ func (g *Game) drawCursor(screen *ebiten.Image) {
 	for i := range g.vtx {
 		setVtxColor(&g.vtx[i], col)
 	}
+	g.cellImage.Fill(color.RGBA{0, 0, 0, 0})
 	g.cellImage.DrawTriangles(g.vtx, g.idx, fillImage, &ebiten.DrawTrianglesOptions{
 		AntiAlias: true,
 		FillRule:  ebiten.FillRuleNonZero,
@@ -204,6 +205,7 @@ type Game struct {
 	vtx       []ebiten.Vertex
 	idx       []uint16
 	opts      ebiten.DrawImageOptions
+	keys      []ebiten.Key
 }
 
 func NewGame(nCells int) *Game {
@@ -218,6 +220,31 @@ func NewGame(nCells int) *Game {
 func (g *Game) Update() error {
 	g.Tick++
 	log.Printf("update tick=%d", g.Tick)
+	g.keys = inpututil.AppendJustReleasedKeys(g.keys[:0])
+	for _, k := range g.keys {
+		switch k {
+		case ebiten.KeyArrowUp:
+			g.CursorY--
+			if g.CursorY < 0 {
+				g.CursorY = g.Ncells - 1
+			}
+		case ebiten.KeyArrowDown:
+			g.CursorY++
+			if g.CursorY >= g.Ncells {
+				g.CursorY = 0
+			}
+		case ebiten.KeyArrowLeft:
+			g.CursorX--
+			if g.CursorX < 0 {
+				g.CursorX = g.Ncells - 1
+			}
+		case ebiten.KeyArrowRight:
+			g.CursorX++
+			if g.CursorX >= g.Ncells {
+				g.CursorX = 0
+			}
+		}
+	}
 	return nil
 }
 
