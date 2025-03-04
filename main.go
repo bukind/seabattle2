@@ -206,6 +206,7 @@ type Game struct {
 	idx       []uint16
 	opts      ebiten.DrawImageOptions
 	keys      []ebiten.Key
+	touchs    []ebiten.TouchID
 }
 
 func NewGame(nCells int) *Game {
@@ -219,7 +220,7 @@ func NewGame(nCells int) *Game {
 
 func (g *Game) Update() error {
 	g.Tick++
-	log.Printf("update tick=%d", g.Tick)
+	// log.Printf("update tick=%d", g.Tick)
 	g.keys = inpututil.AppendJustReleasedKeys(g.keys[:0])
 	for _, k := range g.keys {
 		switch k {
@@ -243,13 +244,35 @@ func (g *Game) Update() error {
 			if g.CursorX >= g.Ncells {
 				g.CursorX = 0
 			}
+		case ebiten.KeySpace:
+			g.Boards[1].Rows[g.CursorY][g.CursorX] = CellMiss
 		}
+	}
+	g.touchs = inpututil.AppendJustReleasedTouchIDs(g.touchs[:0])
+	for _, t := range g.touchs {
+		// TODO: if touch is outside the board, do not hit it.
+		tx, ty := inpututil.TouchPositionInPreviousTick(t)
+		log.Printf("touch (%d, %d)", tx, ty)
+		g.CursorX = pos2Cell(tx, g.Ncells+1, g.Ncells)
+		g.CursorY = pos2Cell(ty, 1, g.Ncells)
+		g.Boards[1].Rows[g.CursorY][g.CursorX] = CellMiss
 	}
 	return nil
 }
 
 func cellPos(row int) int {
 	return cellBorder + (cellSize+cellBorder)*row
+}
+
+func pos2Cell(pos int, min, max int) int {
+	c := (pos-cellBorder)/(cellSize+cellBorder) - min
+	if c < 0 {
+		c = 0
+	}
+	if c >= max {
+		c = max - 1
+	}
+	return c
 }
 
 // moveXY translates GeoM into the cell (X,Y) coordinate of the cell on the board.
