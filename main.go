@@ -8,6 +8,7 @@ import (
 	"log"
 	"math"
 	"math/rand"
+	"slices"
 
 	"github.com/bukind/seabattle2/fonts"
 	"github.com/hajimehoshi/ebiten/v2"
@@ -201,12 +202,13 @@ type Game struct {
 	CursorY int
 
 	// cache objects.
-	cellImage *ebiten.Image
-	vtx       []ebiten.Vertex
-	idx       []uint16
-	opts      ebiten.DrawImageOptions
-	keys      []ebiten.Key
-	touchs    []ebiten.TouchID
+	cellImage     *ebiten.Image
+	vtx           []ebiten.Vertex
+	idx           []uint16
+	opts          ebiten.DrawImageOptions
+	keys          []ebiten.Key
+	activeTouches []ebiten.TouchID
+	killedTouches []ebiten.TouchID
 }
 
 func NewGame(nCells int) *Game {
@@ -248,14 +250,37 @@ func (g *Game) Update() error {
 			g.Boards[1].Rows[g.CursorY][g.CursorX] = CellMiss
 		}
 	}
-	g.touchs = inpututil.AppendJustReleasedTouchIDs(g.touchs[:0])
-	for _, t := range g.touchs {
+	g.activeTouches = inpututil.AppendJustPressedTouchIDs(g.activeTouches)
+	slices.Sort(g.activeTouches)
+	g.killedTouches = inpututil.AppendJustReleasedTouchIDs(g.killedTouches[:0])
+	slices.Sort(g.killedTouches)
+	// Remove killedTouches from activeTouches
+	i, j := 0, 0
+	for k := 0; k < len(g.killedTouches) && i < len(g.activeTouches); i++ {
+		if g.activeTouches[i] == g.killedTouches[k] {
+			// if the touch is released.
+			k++
+		} else {
+			// the touch is not released yet.
+			g.activeTouches[j] = g.activeTouches[i]
+			j++
+		}
+	}
+	g.activeTouches = append(g.activeTouches[:j], g.activeTouches[i:]...)
+	// Draw cursor at the active touches.
+	for _, t := range g.activeTouches {
 		// TODO: if touch is outside the board, do not hit it.
-		tx, ty := inpututil.TouchPositionInPreviousTick(t)
+		tx, ty := ebiten.TouchPosition(t)
 		log.Printf("touch (%d, %d)", tx, ty)
 		g.CursorX = pos2Cell(tx, g.Ncells+1, g.Ncells)
 		g.CursorY = pos2Cell(ty, 1, g.Ncells)
-		g.Boards[1].Rows[g.CursorY][g.CursorX] = CellMiss
+	}
+	for _, t := range g.killedTouches {
+		// TODO: if touch is outside the board, do not hit it.
+		tx, ty := inpututil.TouchPositionInPreviousTick(t)
+		x := pos2Cell(tx, g.Ncells+1, g.Ncells)
+		y := pos2Cell(ty, 1, g.Ncells)
+		g.Boards[1].Rows[y][x] = CellMiss
 	}
 	return nil
 }
