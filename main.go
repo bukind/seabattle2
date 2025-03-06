@@ -272,6 +272,16 @@ func (b *Board) isCellsEmptyY(y, x0, x1 int) bool {
 	return true
 }
 
+func (b *Board) hitCell(x, y int) {
+	switch c := b.Cells[y][x]; c {
+	case CellEmpty, CellMiss, CellMist:
+		b.Cells[y][x] = CellMiss
+	case CellHide, CellShip:
+		b.Cells[y][x] = CellFire
+		// TODO: check if the ship is dead.
+	}
+}
+
 func (g *Game) drawCursor(screen *ebiten.Image) {
 	col := color.RGBA{0, 0xff, 0, uint8(0xff * (g.Tick % (gameTPS + 1)) / gameTPS)}
 
@@ -367,7 +377,7 @@ func (g *Game) Update() error {
 				g.CursorX = 0
 			}
 		case ebiten.KeySpace:
-			g.Boards[SidePeer].Cells[g.CursorY][g.CursorX] = CellMiss
+			g.Boards[SidePeer].hitCell(g.CursorX, g.CursorY)
 		}
 	}
 	g.activeTouches = inpututil.AppendJustPressedTouchIDs(g.activeTouches)
@@ -400,7 +410,7 @@ func (g *Game) Update() error {
 		tx, ty := inpututil.TouchPositionInPreviousTick(t)
 		x := pos2Cell(tx, g.Ncells+1, g.Ncells)
 		y := pos2Cell(ty, 1, g.Ncells)
-		g.Boards[SidePeer].Cells[y][x] = CellMiss
+		g.Boards[SidePeer].hitCell(x, y)
 	}
 	return nil
 }
