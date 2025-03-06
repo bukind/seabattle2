@@ -36,8 +36,9 @@ const (
 	gameTPS    = 10
 
 	CellEmpty Cell = iota
-	CellHide
 	CellMiss
+	CellMist // mist -- no ship
+	CellHide // hidden ship
 	CellShip
 	CellFire
 	CellDead
@@ -53,8 +54,9 @@ var (
 
 	cellParams = map[Cell]CellParams{
 		CellEmpty: {colorSea, colorEmpty, 0.},
-		CellHide:  {colorMist, colorEmpty, 0.},
 		CellMiss:  {colorSea, colorMist, 0.25},
+		CellMist:  {colorMist, colorEmpty, 0.},
+		CellHide:  {colorMist, colorEmpty, 0.},
 		CellShip:  {colorShip, colorEmpty, 0.},
 		CellFire:  {color.RGBA{0x88, 0x22, 0x22, 0xff}, color.RGBA{0xff, 0x88, 0x22, 0x88}, 0.45},
 		CellDead:  {colorSea, colorShip, 0.55},
@@ -71,10 +73,12 @@ func (c Cell) String() string {
 	switch c {
 	case CellEmpty:
 		return "empty"
-	case CellHide:
-		return "hide"
 	case CellMiss:
 		return "miss"
+	case CellMist:
+		return "mist"
+	case CellHide:
+		return "hide"
 	case CellShip:
 		return "ship"
 	case CellFire:
