@@ -30,6 +30,7 @@ type CellParams struct {
 }
 
 const (
+	Ncells     = 8
 	cellSize   = 32
 	cellSizeF  = float32(cellSize)
 	cellBorder = 1
@@ -111,22 +112,26 @@ func setVtxColor(v *ebiten.Vertex, c color.RGBA) {
 	v.ColorA = float32(c.A) / 0xff
 }
 
+type XY struct {
+	x, y int
+}
+
 type Board struct {
 	Game  *Game
 	Side  int
 	Cells [][]Cell
 }
 
-func NewBoard(g *Game, side, size int) *Board {
-	rows := make([][]Cell, size)
+func NewBoard(g *Game, side int) *Board {
+	rows := make([][]Cell, Ncells)
 	cell := CellEmpty
 	if side == SidePeer {
 		cell = CellMist
 	}
 	for i := range rows {
-		r := make([]Cell, size)
+		r := make([]Cell, Ncells)
 		rows[i] = r
-		for j := 0; j < size; j++ {
+		for j := range r {
 			r[j] = cell
 		}
 	}
@@ -140,8 +145,8 @@ func NewBoard(g *Game, side, size int) *Board {
 func (b *Board) draw(screen *ebiten.Image) {
 	g := b.Game
 	// Draw cells
-	for x := 0; x < len(b.Cells[0]); x++ {
-		for y := 0; y < len(b.Cells); y++ {
+	for x := 0; x < Ncells; x++ {
+		for y := 0; y < Ncells; y++ {
 			g.opts.GeoM.Reset()
 			g.moveXY(&g.opts.GeoM, x, y, b.Side)
 			b.drawCellInto(x, y, g.cellImage)
@@ -150,7 +155,7 @@ func (b *Board) draw(screen *ebiten.Image) {
 		text.Draw(screen, fmt.Sprintf("%c", 'A'+x), &text.GoTextFace{
 			Source: ptSansFontSource,
 			Size:   cellSize * 0.8,
-		}, g.textInXY(x, len(b.Cells), b.Side))
+		}, g.textInXY(x, Ncells, b.Side))
 	}
 }
 
@@ -206,8 +211,8 @@ func (b *Board) placeShip(s int) bool {
 		dx = s
 		dy = 1
 	}
-	x0 := rand.Intn(len(b.Cells[0]) - dx + 1)
-	y0 := rand.Intn(len(b.Cells) - dy + 1)
+	x0 := rand.Intn(Ncells - dx + 1)
+	y0 := rand.Intn(Ncells - dy + 1)
 	cell := CellShip
 	if b.Side == SidePeer {
 		cell = CellHide
@@ -235,14 +240,14 @@ func (b *Board) placeShip(s int) bool {
 }
 
 func (b *Board) isCellsEmptyX(x, y0, y1 int) bool {
-	if x < 0 || x >= len(b.Cells[0]) {
+	if x < 0 || x >= Ncells {
 		return true
 	}
 	if y0 < 0 {
 		y0 = 0
 	}
-	if y1 > len(b.Cells) {
-		y1 = len(b.Cells)
+	if y1 > Ncells {
+		y1 = Ncells
 	}
 	for i := y0; i < y1; i++ {
 		switch c := b.Cells[i][x]; c {
@@ -254,14 +259,14 @@ func (b *Board) isCellsEmptyX(x, y0, y1 int) bool {
 }
 
 func (b *Board) isCellsEmptyY(y, x0, x1 int) bool {
-	if y < 0 || y >= len(b.Cells) {
+	if y < 0 || y >= Ncells {
 		return true
 	}
 	if x0 < 0 {
 		x0 = 0
 	}
-	if x1 > len(b.Cells[0]) {
-		x1 = len(b.Cells[0])
+	if x1 > Ncells {
+		x1 = Ncells
 	}
 	for i := x0; i < x1; i++ {
 		switch c := b.Cells[y][i]; c {
@@ -278,8 +283,42 @@ func (b *Board) hitCell(x, y int) {
 		b.Cells[y][x] = CellMiss
 	case CellHide, CellShip:
 		b.Cells[y][x] = CellFire
-		// TODO: check if the ship is dead.
+		if sunk := b.isShipSunk(x, y); len(sunk) > 0 {
+			for _, xy := range sunk {
+				b.Cells[xy.y][xy.x] = CellDead
+			}
+		}
 	}
+}
+
+// the ship is sunk when result is not empty, and it will contains all its cells.
+func (b *Board) isShipSunk(x0, y0 int) []XY {
+	result := make([]XY, 0, 4)
+	for dx := -1; dx < 2; dx += 2 {
+		for x := x0 + dx; x >= 0 && x < Ncells; x += dx {
+			switch c := b.Cells[y0][x]; c {
+			case CellShip, CellHide:
+				return nil
+			case CellFire:
+				result = append(result, XY{x, y0})
+			default:
+				x = -10000
+			}
+		}
+	}
+	for dy := -1; dy < 2; dy += 2 {
+		for y := y0 + dy; y >= 0 && y < Ncells; y += dy {
+			switch c := b.Cells[y][x0]; c {
+			case CellShip, CellHide:
+				return nil
+			case CellFire:
+				result = append(result, XY{x0, y})
+			default:
+				y = -10000
+			}
+		}
+	}
+	return append(result, XY{x0, y0})
 }
 
 func (g *Game) drawCursor(screen *ebiten.Image) {
@@ -312,7 +351,6 @@ func (g *Game) drawCursor(screen *ebiten.Image) {
 
 type Game struct {
 	Tick    int
-	Ncells  int
 	Boards  [2]*Board
 	CursorX int
 	CursorY int
@@ -327,12 +365,11 @@ type Game struct {
 	killedTouches []ebiten.TouchID
 }
 
-func NewGame(nCells int) *Game {
+func NewGame() *Game {
 	g := &Game{
-		Ncells:    nCells,
 		cellImage: ebiten.NewImage(cellSize, cellSize),
 	}
-	g.Boards = [2]*Board{NewBoard(g, SideSelf, nCells), NewBoard(g, SidePeer, nCells)}
+	g.Boards = [2]*Board{NewBoard(g, SideSelf), NewBoard(g, SidePeer)}
 	return g
 }
 
@@ -359,25 +396,28 @@ func (g *Game) Update() error {
 		case ebiten.KeyArrowUp:
 			g.CursorY--
 			if g.CursorY < 0 {
-				g.CursorY = g.Ncells - 1
+				g.CursorY = Ncells - 1
 			}
 		case ebiten.KeyArrowDown:
 			g.CursorY++
-			if g.CursorY >= g.Ncells {
+			if g.CursorY >= Ncells {
 				g.CursorY = 0
 			}
 		case ebiten.KeyArrowLeft:
 			g.CursorX--
 			if g.CursorX < 0 {
-				g.CursorX = g.Ncells - 1
+				g.CursorX = Ncells - 1
 			}
 		case ebiten.KeyArrowRight:
 			g.CursorX++
-			if g.CursorX >= g.Ncells {
+			if g.CursorX >= Ncells {
 				g.CursorX = 0
 			}
 		case ebiten.KeySpace:
 			g.Boards[SidePeer].hitCell(g.CursorX, g.CursorY)
+		case ebiten.KeyQ:
+			// TODO: remove this.
+			return ebiten.Termination
 		}
 	}
 	g.activeTouches = inpututil.AppendJustPressedTouchIDs(g.activeTouches)
@@ -402,14 +442,14 @@ func (g *Game) Update() error {
 		// TODO: if touch is outside the board, do not hit it.
 		tx, ty := ebiten.TouchPosition(t)
 		log.Printf("touch (%d, %d)", tx, ty)
-		g.CursorX = pos2Cell(tx, g.Ncells+1, g.Ncells)
-		g.CursorY = pos2Cell(ty, 1, g.Ncells)
+		g.CursorX = pos2Cell(tx, Ncells+1, Ncells)
+		g.CursorY = pos2Cell(ty, 1, Ncells)
 	}
 	for _, t := range g.killedTouches {
 		// TODO: if touch is outside the board, do not hit it.
 		tx, ty := inpututil.TouchPositionInPreviousTick(t)
-		x := pos2Cell(tx, g.Ncells+1, g.Ncells)
-		y := pos2Cell(ty, 1, g.Ncells)
+		x := pos2Cell(tx, Ncells+1, Ncells)
+		y := pos2Cell(ty, 1, Ncells)
 		g.Boards[SidePeer].hitCell(x, y)
 	}
 	return nil
@@ -432,7 +472,7 @@ func pos2Cell(pos int, min, max int) int {
 
 // moveXY translates GeoM into the cell (X,Y) coordinate of the cell on the board.
 func (g *Game) moveXY(m *ebiten.GeoM, col, row, board int) {
-	m.Translate(float64(cellPos(board*(g.Ncells+1)+col)), float64(cellPos(row+1)))
+	m.Translate(float64(cellPos(board*(Ncells+1)+col)), float64(cellPos(row+1)))
 }
 
 // textInXY returns text options for the text centered in cell (X,Y)
@@ -449,17 +489,17 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	g.Boards[0].draw(screen)
 	g.Boards[1].draw(screen)
 	// Draw vertical numbers between boards.
-	for y := 0; y < g.Ncells; y++ {
+	for y := 0; y < Ncells; y++ {
 		text.Draw(screen, fmt.Sprintf("%c", '1'+y), &text.GoTextFace{
 			Source: ptSansFontSource,
 			Size:   cellSize * 0.8,
-		}, g.textInXY(g.Ncells, y, SideSelf))
+		}, g.textInXY(Ncells, y, SideSelf))
 	}
 	g.drawCursor(screen)
 }
 
 func (g *Game) Layout(oW, oH int) (int, int) {
-	return cellPos(g.Ncells*2 + 1), cellPos(g.Ncells + 2)
+	return cellPos(Ncells*2 + 1), cellPos(Ncells + 2)
 }
 
 func loadFonts() {
@@ -476,8 +516,7 @@ func main() {
 	ebiten.SetWindowSize(640, 480)
 	ebiten.SetWindowTitle("sea battle")
 	ebiten.SetTPS(gameTPS)
-	nCells := 8
-	if err := ebiten.RunGame(NewGame(nCells)); err != nil {
+	if err := ebiten.RunGame(NewGame()); err != nil {
 		log.Fatal(err)
 	}
 }
