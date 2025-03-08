@@ -36,8 +36,8 @@ const (
 	cellSize        = 32
 	cellSizeF       = float32(cellSize)
 	cellBorder      = 1
-	gameTPS         = 10
-	peerTicksPerAct = gameTPS / 4
+	gameTPS         = 20
+	peerTicksPerAct = gameTPS / 5
 )
 
 const (
@@ -373,6 +373,7 @@ type Game struct {
 	CursorPeer XY
 	PeerToHit  XY    // Where is the spot peer wants to hit.
 	LastUpdate int64 // the tick when was the last update on the board.
+	Error      error // terminating error.
 
 	// cache objects.
 	cellImage     *ebiten.Image
@@ -404,10 +405,20 @@ func (g *Game) init() error {
 func (g *Game) Update() error {
 	if g.Tick == 0 {
 		if err := g.init(); err != nil {
-			return err
+			g.Error = err
 		}
 	}
 	g.Tick++
+	if g.Error != nil {
+		return ebiten.Termination
+	}
+	if err := g.update(); err != nil {
+		g.Error = err
+	}
+	return nil
+}
+
+func (g *Game) update() error {
 	// log.Printf("update tick=%d", g.Tick)
 	if err := g.handleKeys(); err != nil {
 		return err
@@ -453,7 +464,7 @@ func (g *Game) handleKeys() error {
 		if k == ebiten.KeyQ {
 			// TODO: remove this.
 			// Special handling even during peer turn.
-			return ebiten.Termination
+			return fmt.Errorf("Stopped by player")
 		}
 		if g.WhoseTurn == SidePeer {
 			continue
@@ -558,7 +569,7 @@ func (g *Game) peerToHit() error {
 		}
 	}
 	// All cells are not suitable!
-	return ebiten.Termination
+	return fmt.Errorf("all cells are hit already")
 }
 
 func cellPos(row int) int {
@@ -602,6 +613,12 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		}, g.textInXY(Ncells, y, SideSelf))
 	}
 	g.drawCursor(screen)
+	if g.Error != nil {
+		text.Draw(screen, g.Error.Error(), &text.GoTextFace{
+			Source: ptSansFontSource,
+			Size:   cellSize * 0.8,
+		}, g.textInXY(Ncells, 0, SideSelf))
+	}
 }
 
 func (g *Game) Layout(oW, oH int) (int, int) {
