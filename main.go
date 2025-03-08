@@ -23,6 +23,8 @@ import (
 
 type Cell int
 
+type Side int
+
 type CellParams struct {
 	SceneColor   color.RGBA
 	CircleColor  color.RGBA
@@ -48,7 +50,7 @@ const (
 )
 
 const (
-	SideSelf = iota
+	SideSelf Side = iota
 	SidePeer
 )
 
@@ -113,16 +115,16 @@ func setVtxColor(v *ebiten.Vertex, c color.RGBA) {
 }
 
 type XY struct {
-	x, y int
+	X, Y int
 }
 
 type Board struct {
 	Game  *Game
-	Side  int
+	Side  Side
 	Cells [][]Cell
 }
 
-func NewBoard(g *Game, side int) *Board {
+func NewBoard(g *Game, side Side) *Board {
 	rows := make([][]Cell, Ncells)
 	cell := CellEmpty
 	if side == SidePeer {
@@ -277,18 +279,24 @@ func (b *Board) isCellsEmptyY(y, x0, x1 int) bool {
 	return true
 }
 
-func (b *Board) hitCell(x, y int) {
+// return true if you can hit again.
+func (b *Board) hitCell(x, y int) bool {
 	switch c := b.Cells[y][x]; c {
-	case CellEmpty, CellMiss, CellMist:
+	case CellEmpty, CellMist:
 		b.Cells[y][x] = CellMiss
+		return false
 	case CellHide, CellShip:
 		b.Cells[y][x] = CellFire
 		if sunk := b.isShipSunk(x, y); len(sunk) > 0 {
 			for _, xy := range sunk {
-				b.Cells[xy.y][xy.x] = CellDead
+				b.Cells[xy.Y][xy.X] = CellDead
 			}
 		}
+		return true
 	}
+	// In all other cases, we don't change the board state.
+	// but ask to hit again.
+	return true
 }
 
 // the ship is sunk when result is not empty, and it will contains all its cells.
@@ -345,15 +353,22 @@ func (g *Game) drawCursor(screen *ebiten.Image) {
 		FillRule:  ebiten.FillRuleNonZero,
 	})
 	g.opts.GeoM.Reset()
-	g.moveXY(&g.opts.GeoM, g.CursorX, g.CursorY, SidePeer)
+	cursor := g.CursorSelf
+	side := SidePeer
+	if g.WhoseTurn != SideSelf {
+		cursor = g.CursorPeer
+		side = SideSelf
+	}
+	g.moveXY(&g.opts.GeoM, cursor.X, cursor.Y, side)
 	screen.DrawImage(g.cellImage, &g.opts)
 }
 
 type Game struct {
-	Tick    int
-	Boards  [2]*Board
-	CursorX int
-	CursorY int
+	Tick       int
+	Boards     [2]*Board
+	WhoseTurn  Side
+	CursorSelf XY
+	CursorPeer XY
 
 	// cache objects.
 	cellImage     *ebiten.Image
@@ -390,36 +405,56 @@ func (g *Game) Update() error {
 	}
 	g.Tick++
 	// log.Printf("update tick=%d", g.Tick)
+	if err := g.handleKeys(); err != nil {
+		return err
+	}
+	return g.handleTouches()
+}
+
+func (g *Game) handleKeys() error {
 	g.keys = inpututil.AppendJustReleasedKeys(g.keys[:0])
 	for _, k := range g.keys {
-		switch k {
-		case ebiten.KeyArrowUp:
-			g.CursorY--
-			if g.CursorY < 0 {
-				g.CursorY = Ncells - 1
-			}
-		case ebiten.KeyArrowDown:
-			g.CursorY++
-			if g.CursorY >= Ncells {
-				g.CursorY = 0
-			}
-		case ebiten.KeyArrowLeft:
-			g.CursorX--
-			if g.CursorX < 0 {
-				g.CursorX = Ncells - 1
-			}
-		case ebiten.KeyArrowRight:
-			g.CursorX++
-			if g.CursorX >= Ncells {
-				g.CursorX = 0
-			}
-		case ebiten.KeySpace:
-			g.Boards[SidePeer].hitCell(g.CursorX, g.CursorY)
-		case ebiten.KeyQ:
+		if k == ebiten.KeyQ {
 			// TODO: remove this.
+			// Special handling even during peer turn.
 			return ebiten.Termination
 		}
+		if g.WhoseTurn == SidePeer {
+			continue
+		}
+		switch k {
+		case ebiten.KeyArrowUp:
+			g.CursorSelf.Y--
+			if g.CursorSelf.Y < 0 {
+				g.CursorSelf.Y = Ncells - 1
+			}
+		case ebiten.KeyArrowDown:
+			g.CursorSelf.Y++
+			if g.CursorSelf.Y >= Ncells {
+				g.CursorSelf.Y = 0
+			}
+		case ebiten.KeyArrowLeft:
+			g.CursorSelf.X--
+			if g.CursorSelf.X < 0 {
+				g.CursorSelf.X = Ncells - 1
+			}
+		case ebiten.KeyArrowRight:
+			g.CursorSelf.X++
+			if g.CursorSelf.X >= Ncells {
+				g.CursorSelf.X = 0
+			}
+		case ebiten.KeySpace:
+			if g.Boards[SidePeer].hitCell(g.CursorSelf.X, g.CursorSelf.Y) {
+				// TODO: hit, check that the game is won.
+			} else {
+				g.WhoseTurn = SidePeer
+			}
+		}
 	}
+	return nil
+}
+
+func (g *Game) handleTouches() error {
 	g.activeTouches = inpututil.AppendJustPressedTouchIDs(g.activeTouches)
 	slices.Sort(g.activeTouches)
 	g.killedTouches = inpututil.AppendJustReleasedTouchIDs(g.killedTouches[:0])
@@ -437,20 +472,28 @@ func (g *Game) Update() error {
 		}
 	}
 	g.activeTouches = append(g.activeTouches[:j], g.activeTouches[i:]...)
+	if g.WhoseTurn != SideSelf {
+		return nil
+	}
 	// Draw cursor at the active touches.
 	for _, t := range g.activeTouches {
 		// TODO: if touch is outside the board, do not hit it.
 		tx, ty := ebiten.TouchPosition(t)
 		log.Printf("touch (%d, %d)", tx, ty)
-		g.CursorX = pos2Cell(tx, Ncells+1, Ncells)
-		g.CursorY = pos2Cell(ty, 1, Ncells)
+		g.CursorSelf.X = pos2Cell(tx, Ncells+1, Ncells)
+		g.CursorSelf.Y = pos2Cell(ty, 1, Ncells)
 	}
 	for _, t := range g.killedTouches {
 		// TODO: if touch is outside the board, do not hit it.
 		tx, ty := inpututil.TouchPositionInPreviousTick(t)
 		x := pos2Cell(tx, Ncells+1, Ncells)
 		y := pos2Cell(ty, 1, Ncells)
-		g.Boards[SidePeer].hitCell(x, y)
+		if g.Boards[SidePeer].hitCell(x, y) {
+			// TODO: hit, check that the game is won.
+		} else {
+			g.WhoseTurn = SidePeer
+			return nil
+		}
 	}
 	return nil
 }
@@ -471,17 +514,17 @@ func pos2Cell(pos int, min, max int) int {
 }
 
 // moveXY translates GeoM into the cell (X,Y) coordinate of the cell on the board.
-func (g *Game) moveXY(m *ebiten.GeoM, col, row, board int) {
-	m.Translate(float64(cellPos(board*(Ncells+1)+col)), float64(cellPos(row+1)))
+func (g *Game) moveXY(m *ebiten.GeoM, x, y int, side Side) {
+	m.Translate(float64(cellPos(int(side)*(Ncells+1)+x)), float64(cellPos(y+1)))
 }
 
 // textInXY returns text options for the text centered in cell (X,Y)
-func (g *Game) textInXY(col, row, board int) *text.DrawOptions {
+func (g *Game) textInXY(x, y int, side Side) *text.DrawOptions {
 	topts := &text.DrawOptions{}
 	topts.PrimaryAlign = text.AlignCenter
 	topts.SecondaryAlign = text.AlignCenter
 	topts.GeoM.Translate(cellSize*0.5, cellSize*0.5)
-	g.moveXY(&topts.GeoM, col, row, board)
+	g.moveXY(&topts.GeoM, x, y, side)
 	return topts
 }
 
