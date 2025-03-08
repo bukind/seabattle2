@@ -32,11 +32,12 @@ type CellParams struct {
 }
 
 const (
-	Ncells     = 8
-	cellSize   = 32
-	cellSizeF  = float32(cellSize)
-	cellBorder = 1
-	gameTPS    = 10
+	Ncells          = 8
+	cellSize        = 32
+	cellSizeF       = float32(cellSize)
+	cellBorder      = 1
+	gameTPS         = 10
+	peerTicksPerAct = gameTPS / 4
 )
 
 const (
@@ -60,7 +61,8 @@ var (
 	colorEmpty = color.RGBA{}
 	colorMist  = color.RGBA{0xbb, 0xbb, 0xbb, 0xff}
 	colorSea   = color.RGBA{0x00, 0x22, 0xff, 0xff}
-	colorShip  = color.RGBA{0x22, 0x22, 0x22, 0xff}
+	colorShip  = color.RGBA{0x44, 0x44, 0x44, 0xff}
+	colorDead  = color.RGBA{0x22, 0x22, 0x22, 0xff}
 
 	cellParams = map[Cell]CellParams{
 		CellEmpty: {colorSea, colorEmpty, 0.},
@@ -70,7 +72,7 @@ var (
 		CellHide: {colorMist, colorShip, 0.1},
 		CellShip: {colorShip, colorEmpty, 0.},
 		CellFire: {color.RGBA{0x88, 0x22, 0x22, 0xff}, color.RGBA{0xff, 0x88, 0x22, 0x88}, 0.45},
-		CellDead: {colorSea, colorShip, 0.55},
+		CellDead: {colorSea, colorDead, 0.55},
 	}
 
 	fillImage = func() *ebiten.Image {
@@ -280,14 +282,14 @@ func (b *Board) isCellsEmptyY(y, x0, x1 int) bool {
 }
 
 // return true if you can hit again.
-func (b *Board) hitCell(x, y int) bool {
-	switch c := b.Cells[y][x]; c {
+func (b *Board) hitCell(xy XY) bool {
+	switch c := b.Cells[xy.Y][xy.X]; c {
 	case CellEmpty, CellMist:
-		b.Cells[y][x] = CellMiss
+		b.Cells[xy.Y][xy.X] = CellMiss
 		return false
 	case CellHide, CellShip:
-		b.Cells[y][x] = CellFire
-		if sunk := b.isShipSunk(x, y); len(sunk) > 0 {
+		b.Cells[xy.Y][xy.X] = CellFire
+		if sunk := b.isShipSunk(xy.X, xy.Y); len(sunk) > 0 {
 			for _, xy := range sunk {
 				b.Cells[xy.Y][xy.X] = CellDead
 			}
@@ -364,11 +366,13 @@ func (g *Game) drawCursor(screen *ebiten.Image) {
 }
 
 type Game struct {
-	Tick       int
+	Tick       int64
 	Boards     [2]*Board
 	WhoseTurn  Side
 	CursorSelf XY
 	CursorPeer XY
+	PeerToHit  XY    // Where is the spot peer wants to hit.
+	LastUpdate int64 // the tick when was the last update on the board.
 
 	// cache objects.
 	cellImage     *ebiten.Image
@@ -408,7 +412,39 @@ func (g *Game) Update() error {
 	if err := g.handleKeys(); err != nil {
 		return err
 	}
-	return g.handleTouches()
+	if err := g.handleTouches(); err != nil {
+		return err
+	}
+	// Handle peer activity.
+	if g.WhoseTurn == SideSelf || g.Tick-g.LastUpdate < peerTicksPerAct {
+		return nil
+	}
+	g.LastUpdate = g.Tick
+	if g.CursorPeer != g.PeerToHit {
+		// moving peer cursor
+		g.CursorPeer.X += sign(g.PeerToHit.X - g.CursorPeer.X)
+		g.CursorPeer.Y += sign(g.PeerToHit.Y - g.CursorPeer.Y)
+		return nil
+	}
+	if g.Boards[SideSelf].hitCell(g.PeerToHit) {
+		// TODO: hit, check if the game is won.
+		// and then hit again.
+		if err := g.peerToHit(); err != nil {
+			return err
+		}
+	} else {
+		g.WhoseTurn = SideSelf
+	}
+	return nil
+}
+
+func sign(v int) int {
+	if v < 0 {
+		return -1
+	} else if v > 0 {
+		return 1
+	}
+	return 0
 }
 
 func (g *Game) handleKeys() error {
@@ -444,10 +480,12 @@ func (g *Game) handleKeys() error {
 				g.CursorSelf.X = 0
 			}
 		case ebiten.KeySpace:
-			if g.Boards[SidePeer].hitCell(g.CursorSelf.X, g.CursorSelf.Y) {
+			if g.Boards[SidePeer].hitCell(g.CursorSelf) {
 				// TODO: hit, check that the game is won.
 			} else {
-				g.WhoseTurn = SidePeer
+				if err := g.peerToHit(); err != nil {
+					return err
+				}
 			}
 		}
 	}
@@ -486,16 +524,41 @@ func (g *Game) handleTouches() error {
 	for _, t := range g.killedTouches {
 		// TODO: if touch is outside the board, do not hit it.
 		tx, ty := inpututil.TouchPositionInPreviousTick(t)
-		x := pos2Cell(tx, Ncells+1, Ncells)
-		y := pos2Cell(ty, 1, Ncells)
-		if g.Boards[SidePeer].hitCell(x, y) {
+		g.CursorSelf.X = pos2Cell(tx, Ncells+1, Ncells)
+		g.CursorSelf.Y = pos2Cell(ty, 1, Ncells)
+		if g.Boards[SidePeer].hitCell(g.CursorSelf) {
 			// TODO: hit, check that the game is won.
 		} else {
-			g.WhoseTurn = SidePeer
-			return nil
+			return g.peerToHit()
 		}
 	}
 	return nil
+}
+
+// peerToHit is to find where peer wants to hit.
+func (g *Game) peerToHit() error {
+	g.WhoseTurn = SidePeer
+	g.LastUpdate = g.Tick
+	// TODO: check the previous successful hit if the ship was sunk.
+	g.PeerToHit.X = rand.Intn(Ncells)
+	g.PeerToHit.Y = rand.Intn(Ncells)
+	for i := 0; i < Ncells*Ncells; i++ {
+		c := g.Boards[SideSelf].Cells[g.PeerToHit.Y][g.PeerToHit.X]
+		if c == CellEmpty || c == CellShip {
+			return nil
+		}
+		// check the next cell
+		g.PeerToHit.X++
+		if g.PeerToHit.X >= Ncells {
+			g.PeerToHit.X = 0
+			g.PeerToHit.Y++
+			if g.PeerToHit.Y > Ncells {
+				g.PeerToHit.Y = 0
+			}
+		}
+	}
+	// All cells are not suitable!
+	return ebiten.Termination
 }
 
 func cellPos(row int) int {
