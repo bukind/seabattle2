@@ -617,7 +617,7 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		text.Draw(screen, g.Error.Error(), &text.GoTextFace{
 			Source: ptSansFontSource,
 			Size:   cellSize * 0.8,
-		}, g.textInXY(Ncells, 0, SideSelf))
+		}, g.textInXY(Ncells, -1, SideSelf))
 	}
 }
 
