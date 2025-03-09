@@ -37,7 +37,7 @@ const (
 	cellSizeF       = float32(cellSize)
 	cellBorder      = 1
 	gameTPS         = 20
-	peerTicksPerAct = gameTPS / 5
+	peerTicksPerAct = gameTPS / 10
 )
 
 const (
@@ -123,6 +123,7 @@ type XY struct {
 type Board struct {
 	Game  *Game
 	Side  Side
+	Lives int
 	Cells [][]Cell
 }
 
@@ -196,6 +197,7 @@ func (b *Board) addRandomShips(maxShipSize, retries int) error {
 			placed := false
 			for attempt := 0; attempt < retries; attempt++ {
 				if placed = b.placeShip(s); placed {
+					b.Lives += s
 					break
 				}
 			}
@@ -289,6 +291,7 @@ func (b *Board) hitCell(xy XY) bool {
 		return false
 	case CellHide, CellShip:
 		b.Cells[xy.Y][xy.X] = CellFire
+		b.Lives--
 		if sunk := b.isShipSunk(xy.X, xy.Y); len(sunk) > 0 {
 			for _, xy := range sunk {
 				b.Cells[xy.Y][xy.X] = CellDead
@@ -438,8 +441,10 @@ func (g *Game) update() error {
 		return nil
 	}
 	if g.Boards[SideSelf].hitCell(g.PeerToHit) {
-		// TODO: hit, check if the game is won.
-		// and then hit again.
+		if g.Boards[SideSelf].Lives == 0 {
+			// The last ship is dead!
+			return fmt.Errorf("The peer has won the game!")
+		}
 		if err := g.peerToHit(); err != nil {
 			return err
 		}
@@ -492,7 +497,9 @@ func (g *Game) handleKeys() error {
 			}
 		case ebiten.KeySpace:
 			if g.Boards[SidePeer].hitCell(g.CursorSelf) {
-				// TODO: hit, check that the game is won.
+				if g.Boards[SidePeer].Lives == 0 {
+					return fmt.Errorf("You have won the game!")
+				}
 			} else {
 				if err := g.peerToHit(); err != nil {
 					return err
@@ -538,7 +545,9 @@ func (g *Game) handleTouches() error {
 		g.CursorSelf.X = pos2Cell(tx, Ncells+1, Ncells)
 		g.CursorSelf.Y = pos2Cell(ty, 1, Ncells)
 		if g.Boards[SidePeer].hitCell(g.CursorSelf) {
-			// TODO: hit, check that the game is won.
+			if g.Boards[SidePeer].Lives == 0 {
+				return fmt.Errorf("You have won the game!")
+			}
 		} else {
 			return g.peerToHit()
 		}
@@ -563,7 +572,7 @@ func (g *Game) peerToHit() error {
 		if g.PeerToHit.X >= Ncells {
 			g.PeerToHit.X = 0
 			g.PeerToHit.Y++
-			if g.PeerToHit.Y > Ncells {
+			if g.PeerToHit.Y >= Ncells {
 				g.PeerToHit.Y = 0
 			}
 		}
