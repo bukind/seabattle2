@@ -148,7 +148,7 @@ func (b *Board) isCellsEmptyX(x, y0, y1 int) bool {
 	}
 	for i := y0; i < y1; i++ {
 		switch c := b.Cells[i][x]; c {
-		case CellHide, CellShip, CellFire, CellDead:
+		case CellHide, CellShip, CellFire, CellSunk:
 			return false
 		}
 	}
@@ -167,7 +167,7 @@ func (b *Board) isCellsEmptyY(y, x0, x1 int) bool {
 	}
 	for i := x0; i < x1; i++ {
 		switch c := b.Cells[y][i]; c {
-		case CellHide, CellShip, CellFire, CellDead:
+		case CellHide, CellShip, CellFire, CellSunk:
 			return false
 		}
 	}
@@ -185,7 +185,7 @@ func (b *Board) hitCell(xy XY) bool {
 		b.Lives--
 		if sunk := b.isShipSunk(xy.X, xy.Y); len(sunk) > 0 {
 			for _, xy := range sunk {
-				b.Cells[xy.Y][xy.X] = CellDead
+				b.Cells[xy.Y][xy.X] = CellSunk
 			}
 		}
 		return true

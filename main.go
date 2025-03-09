@@ -41,12 +41,13 @@ const (
 
 const (
 	CellEmpty Cell = iota
-	CellMiss
-	CellMist // mist -- no ship
-	CellHide // hidden ship
-	CellShip
-	CellFire
-	CellDead
+	CellMiss       // empty cell being hit
+	CellMist       // mist -- empty cell hidden by the mist
+	CellHide       // hidden ship
+	CellShip       // ship cell
+	CellFire       // ship on fire
+	CellSunk       // sunk ship
+	CellOily       // hidden mark around sunk ship, also are used for placement
 )
 
 const (
@@ -67,11 +68,11 @@ var (
 		CellEmpty: {colorSea, colorEmpty, 0.},
 		CellMiss:  {colorSea, colorMist, 0.25},
 		CellMist:  {colorMist, colorEmpty, 0.},
-		// TODO: change second color to empty and radius to 0.
-		CellHide: {colorMist, colorShip, 0.1},
-		CellShip: {colorShip, colorEmpty, 0.},
-		CellFire: {color.RGBA{0x88, 0x22, 0x22, 0xff}, color.RGBA{0xff, 0x88, 0x22, 0x88}, 0.45},
-		CellDead: {colorSea, colorDead, 0.55},
+		CellHide:  {colorMist, colorShip, 0.1}, // TODO: change second color to empty and radius to 0.
+		CellShip:  {colorShip, colorEmpty, 0.},
+		CellFire:  {color.RGBA{0x88, 0x22, 0x22, 0xff}, color.RGBA{0xff, 0x88, 0x22, 0x88}, 0.45},
+		CellSunk:  {colorSea, colorDead, 0.55},
+		CellOily:  {colorSea, colorDead, 0.1}, // TODO: change second color to empty and radius to 0.
 	}
 
 	fillImage = func() *ebiten.Image {
@@ -80,26 +81,6 @@ var (
 		return img
 	}()
 )
-
-func (c Cell) String() string {
-	switch c {
-	case CellEmpty:
-		return "empty"
-	case CellMiss:
-		return "miss"
-	case CellMist:
-		return "mist"
-	case CellHide:
-		return "hide"
-	case CellShip:
-		return "ship"
-	case CellFire:
-		return "fire"
-	case CellDead:
-		return "dead"
-	}
-	return "unknown"
-}
 
 func colorS(c color.RGBA) string {
 	if c == colorEmpty {
