@@ -68,11 +68,11 @@ var (
 		CellEmpty: {colorSea, colorEmpty, 0.},
 		CellMiss:  {colorSea, colorMist, 0.25},
 		CellMist:  {colorMist, colorEmpty, 0.},
-		CellHide:  {colorMist, colorShip, 0.1}, // TODO: change second color to empty and radius to 0.
+		CellHide:  {colorMist, colorEmpty, 0.},
 		CellShip:  {colorShip, colorEmpty, 0.},
 		CellFire:  {color.RGBA{0x88, 0x22, 0x22, 0xff}, color.RGBA{0xff, 0x88, 0x22, 0x88}, 0.45},
 		CellSunk:  {colorSea, colorDead, 0.55},
-		CellOily:  {colorSea, colorDead, 0.1}, // TODO: change second color to empty and radius to 0.
+		CellOily:  {colorSea, colorEmpty, 0.},
 	}
 
 	fillImage = func() *ebiten.Image {
