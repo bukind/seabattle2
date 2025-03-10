@@ -98,80 +98,110 @@ func (b *Board) addRandomShips(maxShipSize, retries int) error {
 		}
 		num++
 	}
+	// Replace working cells back to empty.
+	cell := CellEmpty
+	if b.Side == SidePeer {
+		cell = CellMist
+	}
+	for y := 0; y < Ncells; y++ {
+		for x := 0; x < Ncells; x++ {
+			if b.Cells[y][x] == CellOily {
+				b.Cells[y][x] = cell
+			}
+		}
+	}
 	return nil
 }
 
-func (b *Board) placeShip(s int) bool {
-	dx := 1
-	dy := s
-	if r := rand.Intn(2); r != 0 {
-		dx = s
-		dy = 1
+func shipSeq(p0, p1 XY) func(yield func(XY) bool) {
+	return func(yield func(XY) bool) {
+		dx := sign(p1.X - p0.X)
+		dy := sign(p1.Y - p0.Y)
+		if dx == 0 {
+			for yield(p0) {
+				if p0.Y == p1.Y {
+					return
+				}
+				p0.Y += dy
+			}
+		} else {
+			for yield(p0) {
+				if p0.X == p1.X {
+					return
+				}
+				p0.X += dx
+			}
+		}
 	}
-	x0 := rand.Intn(Ncells - dx + 1)
-	y0 := rand.Intn(Ncells - dy + 1)
+}
+
+// Temporary function to wrap range-over-func.
+// It lacks early exit, i.e. it always generate all items in sequence.
+// TODO: just drop it when we switch to go1.23.
+func seqXY(rof func(func(XY) bool)) []XY {
+	res := make([]XY, 0, 20)
+	yield := func(xy XY) bool {
+		res = append(res, xy)
+		return true
+	}
+	rof(yield)
+	return res
+}
+
+func (b *Board) placeShip(size int) bool {
+	xSize := 0
+	ySize := size - 1
+	if r := rand.Intn(2); r != 0 {
+		xSize = size - 1
+		ySize = 0
+	}
+	p0 := XY{rand.Intn(Ncells - xSize), rand.Intn(Ncells - ySize)}
+	p1 := XY{p0.X + xSize, p0.Y + ySize}
+	for _, xy := range seqXY(shipSeq(p0, p1)) {
+		switch c := b.Cells[xy.Y][xy.X]; c {
+		case CellEmpty, CellMist:
+			// ok
+		default:
+			return false
+		}
+	}
 	cell := CellShip
 	if b.Side == SidePeer {
 		cell = CellHide
 	}
-	if dx > 1 {
-		if !(b.isCellsEmptyY(y0-1, x0, x0+dx) &&
-			b.isCellsEmptyY(y0+1, x0, x0+dx) &&
-			b.isCellsEmptyY(y0, x0-1, x0+dx+1)) {
-			return false
-		}
-		for i := x0; i < x0+dx; i++ {
-			b.Cells[y0][i] = cell
-		}
-	} else {
-		if !(b.isCellsEmptyX(x0-1, y0, y0+dy) &&
-			b.isCellsEmptyX(x0+1, y0, y0+dy) &&
-			b.isCellsEmptyX(x0, y0-1, y0+dy+1)) {
-			return false
-		}
-		for i := y0; i < y0+dy; i++ {
-			b.Cells[i][x0] = cell
+	for _, xy := range seqXY(shipSeq(p0, p1)) {
+		b.Cells[xy.Y][xy.X] = cell
+	}
+	for _, xy := range seqXY(b.markAround(p0, p1)) {
+		switch c := b.Cells[xy.Y][xy.X]; c {
+		case CellEmpty, CellMist:
+			b.Cells[xy.Y][xy.X] = CellOily
 		}
 	}
 	return true
 }
 
-func (b *Board) isCellsEmptyX(x, y0, y1 int) bool {
-	if x < 0 || x >= Ncells {
-		return true
-	}
-	if y0 < 0 {
-		y0 = 0
-	}
-	if y1 > Ncells {
-		y1 = Ncells
-	}
-	for i := y0; i < y1; i++ {
-		switch c := b.Cells[i][x]; c {
-		case CellHide, CellShip, CellFire, CellSunk:
-			return false
+func (b *Board) markAround(p0, p1 XY) func(func(XY) bool) {
+	return func(yield func(xy XY) bool) {
+		seqs := make([]func(func(XY) bool), 0, 4)
+		for _, y := range []int{p0.Y - 1, p1.Y + 1} {
+			if y >= 0 && y < Ncells {
+				seqs = append(seqs, shipSeq(XY{p0.X, y}, XY{p1.X, y}))
+			}
+		}
+		for _, x := range []int{p0.X - 1, p1.X + 1} {
+			if x >= 0 && x < Ncells {
+				seqs = append(seqs, shipSeq(XY{x, p0.Y}, XY{x, p1.Y}))
+			}
+		}
+		for _, seq := range seqs {
+			for _, xy := range seqXY(seq) {
+				if !yield(xy) {
+					return
+				}
+			}
 		}
 	}
-	return true
-}
-
-func (b *Board) isCellsEmptyY(y, x0, x1 int) bool {
-	if y < 0 || y >= Ncells {
-		return true
-	}
-	if x0 < 0 {
-		x0 = 0
-	}
-	if x1 > Ncells {
-		x1 = Ncells
-	}
-	for i := x0; i < x1; i++ {
-		switch c := b.Cells[y][i]; c {
-		case CellHide, CellShip, CellFire, CellSunk:
-			return false
-		}
-	}
-	return true
 }
 
 // return true if you can hit again.
