@@ -139,14 +139,15 @@ func (g *Game) drawCursor(screen *ebiten.Image) {
 }
 
 type Game struct {
-	Tick       int64
-	Boards     [2]*Board
-	WhoseTurn  Side
-	CursorSelf XY
-	CursorPeer XY
-	PeerToHit  XY    // Where is the spot peer wants to hit.
-	LastUpdate int64 // the tick when was the last update on the board.
-	Error      error // terminating error.
+	Tick        int64
+	LastUpdate  int64 // the tick when was the last update on the board.
+	Boards      [2]*Board
+	WhoseTurn   Side
+	Error       error // terminating error.
+	CursorSelf  XY
+	CursorPeer  XY
+	PeerToHit   XY // Where is the spot peer wants to hit.
+	LastPeerHit XY // The successful one.
 
 	// cache objects.
 	cellImage     *ebiten.Image
@@ -210,6 +211,7 @@ func (g *Game) update() error {
 		return nil
 	}
 	if g.Boards[SideSelf].hitCell(g.PeerToHit) {
+		g.LastPeerHit = g.PeerToHit
 		if g.Boards[SideSelf].Lives == 0 {
 			// The last ship is dead!
 			return fmt.Errorf("The peer has won the game!")
@@ -327,6 +329,14 @@ func (g *Game) handleTouches() error {
 func (g *Game) peerToHit() error {
 	g.WhoseTurn = SidePeer
 	g.LastUpdate = g.Tick
+	if g.Boards[SideSelf].Cells[g.LastPeerHit.Y][g.LastPeerHit.X] == CellFire {
+		xys := g.peerToHitShipMore()
+		if len(xys) == 0 {
+			return fmt.Errorf("cannot find next hit point after %s", g.LastPeerHit)
+		}
+		g.PeerToHit = xys[rand.Intn(len(xys))]
+		return nil
+	}
 	// TODO: check the previous successful hit if the ship was sunk.
 	g.PeerToHit.X = rand.Intn(Ncells)
 	g.PeerToHit.Y = rand.Intn(Ncells)
@@ -347,6 +357,38 @@ func (g *Game) peerToHit() error {
 	}
 	// All cells are not suitable!
 	return fmt.Errorf("all cells are hit already")
+}
+
+func (g *Game) peerToHitShipMore() []XY {
+	b := g.Boards[SideSelf]
+	only := false
+	check := func(xys *[]XY, xy XY) bool {
+		switch c := b.Cells[xy.Y][xy.X]; c {
+		case CellFire:
+			only = true
+			return true
+		case CellEmpty, CellShip:
+			*xys = append(*xys, xy)
+		}
+		return false
+	}
+	xs := make([]XY, 0, 4)
+	for dx := -1; dx < 2; dx += 2 {
+		for x := g.LastPeerHit.X + dx; x >= 0 && x < Ncells && check(&xs, XY{x, g.LastPeerHit.Y}); x += dx {
+		}
+	}
+	if only {
+		return xs
+	}
+	ys := make([]XY, 0, 4)
+	for dy := -1; dy < 2; dy += 2 {
+		for y := g.LastPeerHit.Y + dy; y >= 0 && y < Ncells && check(&ys, XY{g.LastPeerHit.X, y}); y += dy {
+		}
+	}
+	if only {
+		return ys
+	}
+	return append(xs, ys...)
 }
 
 func cellPos(row int) int {
