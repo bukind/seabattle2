@@ -3,8 +3,10 @@ package main
 import (
 	"fmt"
 	"image/color"
+	"log"
 	"math"
 	"math/rand"
+	"slices"
 
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/text/v2"
@@ -184,13 +186,16 @@ func (b *Board) placeShip(size int) bool {
 func (b *Board) markAround(p0, p1 XY) func(func(XY) bool) {
 	return func(yield func(xy XY) bool) {
 		seqs := make([]func(func(XY) bool), 0, 4)
+		log.Printf("markAround for %s %s", p0, p1)
 		for _, y := range []int{p0.Y - 1, p1.Y + 1} {
 			if y >= 0 && y < Ncells {
+				log.Printf(" shipSeq %s %s", XY{p0.X, y}, XY{p1.X, y})
 				seqs = append(seqs, shipSeq(XY{p0.X, y}, XY{p1.X, y}))
 			}
 		}
 		for _, x := range []int{p0.X - 1, p1.X + 1} {
 			if x >= 0 && x < Ncells {
+				log.Printf(" shipSeq %s %s", XY{x, p0.Y}, XY{x, p1.Y})
 				seqs = append(seqs, shipSeq(XY{x, p0.Y}, XY{x, p1.Y}))
 			}
 		}
@@ -213,9 +218,18 @@ func (b *Board) hitCell(xy XY) bool {
 	case CellHide, CellShip:
 		b.Cells[xy.Y][xy.X] = CellFire
 		b.Lives--
-		if sunk := b.isShipSunk(xy.X, xy.Y); len(sunk) > 0 {
+		sunk := b.isShipSunk(xy.X, xy.Y)
+		if len(sunk) > 0 {
+			log.Printf("sunk %v", sunk)
 			for _, xy := range sunk {
 				b.Cells[xy.Y][xy.X] = CellSunk
+			}
+			if b.Side == SideSelf {
+				for _, xy := range seqXY(b.markAround(sunk[0], sunk[len(sunk)-1])) {
+					if c := b.Cells[xy.Y][xy.X]; c == CellEmpty {
+						b.Cells[xy.Y][xy.X] = CellOily
+					}
+				}
 			}
 		}
 		return true
@@ -228,6 +242,7 @@ func (b *Board) hitCell(xy XY) bool {
 // the ship is sunk when result is not empty, and it will contains all its cells.
 func (b *Board) isShipSunk(x0, y0 int) []XY {
 	result := make([]XY, 0, 4)
+	result = append(result, XY{x0, y0})
 	for dx := -1; dx < 2; dx += 2 {
 		for x := x0 + dx; x >= 0 && x < Ncells; x += dx {
 			switch c := b.Cells[y0][x]; c {
@@ -252,5 +267,14 @@ func (b *Board) isShipSunk(x0, y0 int) []XY {
 			}
 		}
 	}
-	return append(result, XY{x0, y0})
+	slices.SortFunc(result, func(a, b XY) int {
+		if s := sign(a.Y - b.Y); s != 0 {
+			return s
+		}
+		if s := sign(a.X - b.X); s != 0 {
+			return s
+		}
+		return 0
+	})
+	return result
 }

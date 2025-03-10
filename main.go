@@ -100,6 +100,10 @@ type XY struct {
 	X, Y int
 }
 
+func (xy XY) String() string {
+	return fmt.Sprintf("%c%c", 'A'+xy.X, '1'+xy.Y)
+}
+
 func (g *Game) drawCursor(screen *ebiten.Image) {
 	col := color.RGBA{0, 0xff, 0, uint8(0xff * (g.Tick % (gameTPS + 1)) / gameTPS)}
 
@@ -188,7 +192,6 @@ func (g *Game) Update() error {
 }
 
 func (g *Game) update() error {
-	// log.Printf("update tick=%d", g.Tick)
 	if err := g.handleKeys(); err != nil {
 		return err
 	}
@@ -301,7 +304,6 @@ func (g *Game) handleTouches() error {
 	for _, t := range g.activeTouches {
 		// TODO: if touch is outside the board, do not hit it.
 		tx, ty := ebiten.TouchPosition(t)
-		log.Printf("touch (%d, %d)", tx, ty)
 		g.CursorSelf.X = pos2Cell(tx, Ncells+1, Ncells)
 		g.CursorSelf.Y = pos2Cell(ty, 1, Ncells)
 	}
