@@ -37,6 +37,7 @@ const (
 	cellBorder      = 1
 	gameTPS         = 20
 	peerTicksPerAct = gameTPS / 10
+	maxShipSize     = 4
 )
 
 const (
@@ -169,7 +170,7 @@ func NewGame() *Game {
 
 func (g *Game) init() error {
 	for _, b := range g.Boards {
-		if err := b.addRandomShips(4, 30); err != nil {
+		if err := b.addRandomShips(30); err != nil {
 			return err
 		}
 	}
@@ -337,7 +338,7 @@ func (g *Game) peerToHit() error {
 		g.PeerToHit = xys[rand.Intn(len(xys))]
 		return nil
 	}
-	// TODO: check the previous successful hit if the ship was sunk.
+	// The previous attempt was a miss, or the ship was sunk.
 	g.PeerToHit.X = rand.Intn(Ncells)
 	g.PeerToHit.Y = rand.Intn(Ncells)
 	for i := 0; i < Ncells*Ncells; i++ {

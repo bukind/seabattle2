@@ -17,6 +17,7 @@ type Board struct {
 	Game  *Game
 	Side  Side
 	Lives int
+	Ships []int // number of ships of size = idx+1
 	Cells [][]Cell
 }
 
@@ -37,6 +38,7 @@ func NewBoard(g *Game, side Side) *Board {
 		Game:  g,
 		Side:  side,
 		Cells: rows,
+		Ships: make([]int, maxShipSize),
 	}
 }
 
@@ -83,7 +85,7 @@ func (b *Board) drawCellInto(x, y int, into *ebiten.Image) {
 	}
 }
 
-func (b *Board) addRandomShips(maxShipSize, retries int) error {
+func (b *Board) addRandomShips(retries int) error {
 	num := 1
 	for s := maxShipSize; s > 0; s-- {
 		for n := 0; n < num; n++ {
@@ -97,6 +99,7 @@ func (b *Board) addRandomShips(maxShipSize, retries int) error {
 			if !placed {
 				return fmt.Errorf("cannot place ship of size %d", s)
 			}
+			b.Ships[s-1]++
 		}
 		num++
 	}
@@ -221,6 +224,7 @@ func (b *Board) hitCell(xy XY) bool {
 		sunk := b.isShipSunk(xy.X, xy.Y)
 		if len(sunk) > 0 {
 			log.Printf("sunk %v", sunk)
+			b.Ships[len(sunk)-1]--
 			for _, xy := range sunk {
 				b.Cells[xy.Y][xy.X] = CellSunk
 			}
