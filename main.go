@@ -144,6 +144,7 @@ type Game struct {
 	LastUpdate  int64 // the tick when was the last update on the board.
 	Boards      [2]*Board
 	WhoseTurn   Side
+	Message     string
 	Error       error // terminating error.
 	CursorSelf  XY
 	CursorPeer  XY
@@ -162,6 +163,7 @@ type Game struct {
 
 func NewGame() *Game {
 	g := &Game{
+		Message:   "Note: ships can only touches by corners",
 		cellImage: ebiten.NewImage(cellSize, cellSize),
 	}
 	g.Boards = [2]*Board{NewBoard(g, SideSelf), NewBoard(g, SidePeer)}
@@ -433,8 +435,12 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		}, g.textInXY(Ncells, y, SideSelf))
 	}
 	g.drawCursor(screen)
+	msg := g.Message
 	if g.Error != nil {
-		text.Draw(screen, g.Error.Error(), &text.GoTextFace{
+		msg = g.Error.Error()
+	}
+	if msg != "" {
+		text.Draw(screen, msg, &text.GoTextFace{
 			Source: ptSansFontSource,
 			Size:   cellSize * 0.8,
 		}, g.textInXY(Ncells, -1, SideSelf))

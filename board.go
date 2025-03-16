@@ -235,6 +235,8 @@ func (b *Board) hitCell(xy XY) bool {
 					}
 				}
 			}
+			g := b.Game
+			g.Message = fmt.Sprintf("Sunk, remaining: %v, %v", g.Boards[0].Ships, g.Boards[1].Ships)
 		}
 		return true
 	}
