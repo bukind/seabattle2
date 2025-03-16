@@ -189,16 +189,16 @@ func (b *Board) placeShip(size int) bool {
 func (b *Board) markAround(p0, p1 XY) func(func(XY) bool) {
 	return func(yield func(xy XY) bool) {
 		seqs := make([]func(func(XY) bool), 0, 4)
-		log.Printf("markAround for %s %s", p0, p1)
+		// log.Printf("markAround for %s %s", p0, p1)
 		for _, y := range []int{p0.Y - 1, p1.Y + 1} {
 			if y >= 0 && y < Ncells {
-				log.Printf(" shipSeq %s %s", XY{p0.X, y}, XY{p1.X, y})
+				// log.Printf(" shipSeq %s %s", XY{p0.X, y}, XY{p1.X, y})
 				seqs = append(seqs, shipSeq(XY{p0.X, y}, XY{p1.X, y}))
 			}
 		}
 		for _, x := range []int{p0.X - 1, p1.X + 1} {
 			if x >= 0 && x < Ncells {
-				log.Printf(" shipSeq %s %s", XY{x, p0.Y}, XY{x, p1.Y})
+				// log.Printf(" shipSeq %s %s", XY{x, p0.Y}, XY{x, p1.Y})
 				seqs = append(seqs, shipSeq(XY{x, p0.Y}, XY{x, p1.Y}))
 			}
 		}

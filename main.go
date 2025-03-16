@@ -340,6 +340,12 @@ func (g *Game) peerToHit() error {
 		g.PeerToHit = xys[rand.Intn(len(xys))]
 		return nil
 	}
+	return g.huntLargestStrategy()
+	// return g.uniformStrategy()
+}
+
+// uniformStrategy uniformly choose a random cell to hit.
+func (g *Game) uniformStrategy() error {
 	// The previous attempt was a miss, or the ship was sunk.
 	g.PeerToHit.X = rand.Intn(Ncells)
 	g.PeerToHit.Y = rand.Intn(Ncells)
@@ -360,6 +366,108 @@ func (g *Game) peerToHit() error {
 	}
 	// All cells are not suitable!
 	return fmt.Errorf("all cells are hit already")
+}
+
+// huntLargestStrategy hunts for the largest ship.
+func (g *Game) huntLargestStrategy() error {
+	largest := maxShipSize
+	b := g.Boards[SideSelf]
+	for ; largest > 0; largest-- {
+		if b.Ships[largest-1] > 0 {
+			break
+		}
+	}
+	if largest <= 0 {
+		return fmt.Errorf("could not determine largest ship")
+	}
+	cellWeight := make(map[XY]int)
+	markSlice := func(i0, i1 int, f func(i, w int)) {
+		if i0 == -1 {
+			return
+		}
+		if i1-i0 < largest {
+			return
+		}
+		// 0123456 <-- indices
+		// 123321  <-- weight
+		// log.Printf("markSlice(%d, %d)", i0, i1)
+		for i := i0; i < i1; i++ {
+			w := largest
+			if w1 := i - i0 + 1; w1 < w {
+				w = w1
+			}
+			if w2 := i1 - i; w2 < w {
+				w = w2
+			}
+			f(i, w)
+		}
+	}
+	// Scan along X.
+	for y := 0; y < Ncells; y++ {
+		xStart := -1
+		x := 0
+		fx := func(i, w int) {
+			xy := XY{i, y}
+			w0 := cellWeight[xy]
+			cellWeight[xy] = w0 + w
+			// log.Printf("weight %s: %d + %d -> %d", xy, w0, w, cellWeight[xy])
+		}
+		for ; x < Ncells; x++ {
+			switch c := b.Cells[y][x]; c {
+			case CellEmpty, CellShip:
+				if xStart == -1 {
+					xStart = x
+				}
+			default:
+				markSlice(xStart, x, fx)
+				xStart = -1
+			}
+		}
+		markSlice(xStart, x, fx)
+	}
+	// Scan along Y.
+	for x := 0; x < Ncells; x++ {
+		yStart := -1
+		y := 0
+		fy := func(i, w int) {
+			xy := XY{x, i}
+			w0 := cellWeight[xy]
+			cellWeight[xy] = w0 + w
+			// log.Printf("weight %s: %d + %d -> %d", xy, w0, w, cellWeight[xy])
+		}
+		for ; y < Ncells; y++ {
+			switch c := b.Cells[y][x]; c {
+			case CellEmpty, CellShip:
+				if yStart == -1 {
+					yStart = y
+				}
+			default:
+				markSlice(yStart, y, fy)
+				yStart = -1
+			}
+		}
+		markSlice(yStart, y, fy)
+	}
+	// Find cells with max count in the map.
+	maxW := 0
+	var cells []XY
+	for xy, w := range cellWeight {
+		if w < maxW {
+			continue
+		}
+		if w > maxW {
+			cells = cells[:0]
+			maxW = w
+		}
+		cells = append(cells, xy)
+	}
+	// log.Printf("total suitable cells: %d; maxW(%d) cells(%d): %v", len(cellWeight), maxW, len(cells), cells)
+	if len(cells) == 0 {
+		return fmt.Errorf("cannot find cells for the largest ship")
+	}
+	i := rand.Intn(len(cells))
+	g.PeerToHit = cells[i]
+	return nil
 }
 
 func (g *Game) peerToHitShipMore() []XY {
