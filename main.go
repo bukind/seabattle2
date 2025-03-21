@@ -163,7 +163,7 @@ type Game struct {
 
 func NewGame() *Game {
 	g := &Game{
-		Message:   "Note: ships can only touches by corners",
+		Message:   "Note: ships can only touch by corners",
 		cellImage: ebiten.NewImage(cellSize, cellSize),
 	}
 	g.Boards = [2]*Board{NewBoard(g, SideSelf), NewBoard(g, SidePeer)}
@@ -202,6 +202,10 @@ func (g *Game) update() error {
 	if err := g.handleTouches(); err != nil {
 		return err
 	}
+	if err := g.handleMouse(); err != nil {
+		return err
+	}
+
 	// Handle peer activity.
 	if g.WhoseTurn == SideSelf || g.Tick-g.LastUpdate < peerTicksPerAct {
 		return nil
@@ -317,6 +321,30 @@ func (g *Game) handleTouches() error {
 		tx, ty := inpututil.TouchPositionInPreviousTick(t)
 		g.CursorSelf.X = pos2Cell(tx, Ncells+1, Ncells)
 		g.CursorSelf.Y = pos2Cell(ty, 1, Ncells)
+		if g.Boards[SidePeer].hitCell(g.CursorSelf) {
+			if g.Boards[SidePeer].Lives == 0 {
+				return fmt.Errorf("You have won the game!")
+			}
+		} else {
+			return g.peerToHit()
+		}
+	}
+	return nil
+}
+
+func (g *Game) handleMouse() error {
+	if g.WhoseTurn != SideSelf {
+		return nil
+	}
+	cx, cy := ebiten.CursorPosition()
+	pressed := ebiten.IsMouseButtonPressed(ebiten.MouseButtonLeft)
+	justReleased := inpututil.IsMouseButtonJustReleased(ebiten.MouseButtonLeft)
+	if pressed || justReleased {
+		// Draw game cursor.
+		g.CursorSelf.X = pos2Cell(cx, Ncells+1, Ncells)
+		g.CursorSelf.Y = pos2Cell(cy, 1, Ncells)
+	}
+	if justReleased {
 		if g.Boards[SidePeer].hitCell(g.CursorSelf) {
 			if g.Boards[SidePeer].Lives == 0 {
 				return fmt.Errorf("You have won the game!")
